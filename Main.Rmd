@@ -1,0 +1,156 @@
+---
+title: "Main"
+author: "Saeid Abolfazli (PhD), Zohreh Sanaei (PhD)"
+date: "May 15, 2016"
+output: html_document
+---
+Load data first.
+
+```{r}
+file <- file.path("data","stevens.csv")
+Stevens <- read.csv(file)
+str(Stevens)
+```
+As can be seen there are 556 cases of Stevens.
+
+Now split the data into train and test.
+
+```{r}
+library("lubripack")
+
+lubripack("caTools")
+set.seed(3000)
+  
+index <- sample.split(Stevens$Reverse, SplitRatio = 0.7)
+train <- subset(Stevens, index==TRUE)
+test <- subset(Stevens, index==FALSE)
+
+```
+Now lets build CART model.
+
+```{r}
+
+lubripack("rpart","rpart.plot")
+StevensTree <- rpart(Reverse~Circuit + Issue + Petitioner + Respondent + LowerCourt + Unconst , data= train, method = "class",minbucket = 25)
+
+summary(StevensTree)
+prp(StevensTree)
+
+
+```
+Let calculate accuracy of model on test data using confusion table.
+
+```{r}
+Pred <- predict(StevensTree, newdata = test, type = "class")
+table(test$Reverse,Pred)
+sensitivity <- 71/93
+sensitivity
+specificity <- 41/77
+specificity
+accuracy <- (71 + 41) / (71+41+22+36)
+accuracy
+
+```
+Now create ROC Curve.
+
+In this case, since we want to adjust threshould value, we do not pass type = "class" to the predict function. So, we can use the probability values directly.
+
+```{r}
+lubripack("ROCR")
+Predtest <- predict(StevensTree, newdata = test)[,2]
+Predtest
+ROCRPred <- prediction(Predtest,test$Reverse)
+ROCRPerf <- performance(ROCRPred,"tpr","fpr")
+plot(ROCRPerf, colorize= TRUE,lwd=7,print.cutoffs.at=seq(0,1,0.1))
+plot(ROCRPerf, colorize= TRUE,lwd=7,print.cutoffs.at=seq(0,1,0.1),text.adj=c(-0.2,1.7))
+
+ROCRPerf <- performance(ROCRPred,"auc")
+ROCRPerf
+
+```
+
+
+First build a CART model that is similar to the one we built in Video 4, except change the minbucket parameter to 5. Plot the tree.
+
+```{r}
+StevensTree2 <- rpart(Reverse~Circuit + Issue + Petitioner + Respondent + LowerCourt + Unconst, data = train, method = "class", minbucket = 5)
+
+prp(StevensTree2)
+```
+
+```{r}
+StevensTree3 <- rpart(Reverse~Circuit + Issue + Petitioner + Respondent + LowerCourt + Unconst, data = train, method = "class", minbucket = 100)
+prp(StevensTree3)
+```
+
+
+
+Lets build random forest of the Steven Data
+
+
+```{r}
+lubripack("randomForest")
+train$Reverse <- as.factor(train$Reverse)
+test$Reverse <- as.factor(test$Reverse)
+
+StevenRF <- randomForest(Reverse~Circuit + Issue + Petitioner + Respondent + LowerCourt + Unconst, data = train, ntree = 200, nodesize = 25)
+pred <- predict(StevenRF, newdata = test)
+
+table(test$Reverse, pred)
+acc <- (43+77)/(43+34+16+77)
+acc
+```
+
+
+**IMPORTANT NOTE:** When creating random forest models, you might still get different answers from the ones you see here even if you set the random seed. This has to do with different operating systems and the random forest implementation.
+
+Let's see what happens if we set the seed to two different values and create two different random forest models.
+
+First, set the seed to 100, and the re-build the random forest model, exactly like we did in the previous video (Video 5). Then make predictions on the test set. What is the accuracy of the model on the test set?
+
+
+```{r}
+set.seed(100)
+RF_Model_100 <- randomForest(Reverse~Circuit + Issue + Petitioner + Respondent + LowerCourt + Unconst, data = train, ntree = 200, nodesize = 25)
+
+Pred <- predict(RF_Model_100,  newdata = test, method="class")
+table(test$Reverse,Pred)
+acc <- (43+74)/(43+34+19+74)
+acc
+```
+
+Now lets change seed to 200.
+
+```{r}
+set.seed(200)
+RF_Model_200 <- randomForest(Reverse~Circuit + Issue + Petitioner + Respondent + LowerCourt + Unconst, data = train, ntree = 200, nodesize = 25)
+
+Pred <- predict(RF_Model_200, newdata = test, method="class")
+table(test$Reverse,Pred)
+acc <- (43+74)/(43+34+19+74)
+acc
+```
+
+
+# K-Fold Cross-Validation
+```{r}
+lubripack("caret","e1071")
+numFolds <- trainControl(method="cv", number = 10) 
+cp_grid <- expand.grid(.cp=seq(0.01,0.5,0.01))
+train(Reverse~Circuit + Issue + Petitioner + Respondent + LowerCourt + Unconst, data = train, method="rpart",trControl=numFolds, tuneGrid=cp_grid)
+```
+
+Now, we are able to use cp value for new random forest model.
+
+```{r}
+StevensCV <- rpart(Reverse~Circuit + Issue + Petitioner + Respondent + LowerCourt + Unconst, data = train,method = "class",cp=0.19)
+predict_CV <- predict(StevensCV,newdata =test, type = "class")
+table(test$Reverse,predict_CV)
+
+acc <- (59+64)/(59+64+18+29)
+acc
+
+prp(StevensCV)
+```
+
+
